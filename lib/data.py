@@ -113,9 +113,8 @@ def generate_training_instances(parsing_system: ParsingSystem,
                     print(i, label)
                 instances.append({"input": feature, "label": label})
                 c = parsing_system.apply(c, oracle)
-                if c.tree.equal(trees[i]):
-                    print("Implementation correct::{0}::{1}::{2}".format(str(i), str(c.tree.counter), str(trees[i].counter)))
-                # print("hello")
+                # if c.tree.equal(trees[i]):
+                    # print("Implementation correct::{0}::{1}::{2}".format(str(i), str(c.tree.counter), str(trees[i].counter)))
     return instances
 
 

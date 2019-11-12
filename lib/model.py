@@ -24,7 +24,9 @@ class CubicActivation(layers.Layer):
         """
         # TODO(Students) Start
         # Comment the next line after implementing call.
-        raise NotImplementedError
+
+        return tf.pow(vector, 3)
+
         # TODO(Students) End
 
 
@@ -90,9 +92,12 @@ class DependencyParser(models.Model):
         self.num_transitions = num_transitions
         self.trainable_embeddings = trainable_embeddings
 
-        self.dense_layers = []
-        self.dense_layers.append(tf.keras.layers.Dense(hidden_dim, input_shape=(num_tokens, embedding_dim)))
-        self.dense_layers.append(tf.keras.layers.Dense(num_transitions))
+        self.embeddings = tf.Variable(tf.random.truncated_normal((vocab_size, embedding_dim), stddev=0.05), trainable=self.trainable_embeddings)
+
+        self.w1 = tf.Variable(tf.random.truncated_normal([self.hidden_dim, self.num_tokens * self.embedding_dim], stddev=0.05), trainable=trainable_embeddings)
+        self.bias_for_hidden_layer = tf.Variable(tf.random.truncated_normal([1, self.hidden_dim], stddev=0.05), trainable=trainable_embeddings)
+        self.w2 = tf.Variable(tf.random.truncated_normal([self.num_transitions, self.hidden_dim], stddev=0.05), trainable=trainable_embeddings)
+        
         # TODO(Students) End
 
     def call(self,
@@ -130,10 +135,18 @@ class DependencyParser(models.Model):
         n_batch = input_shape[0]
         num_tokens = input_shape[1]
 
+        input_embeddings = tf.reshape(tf.nn.embedding_lookup(self.embeddings, inputs), [n_batch, num_tokens * self.embedding_dim])
+
+        bias_for_batch = tf.tile(self.bias_for_hidden_layer, [n_batch, 1])
+        hidden_layer_state = tf.reshape(tf.matmul(input_embeddings, tf.transpose(self.w1)), [n_batch, self.hidden_dim])
+        hidden_layer_state = tf.add(hidden_layer_state, bias_for_batch)
+        hidden_layer_state = self._activation(hidden_layer_state)
+
+        logits = tf.reshape(tf.matmul(hidden_layer_state, tf.transpose(self.w2)), [n_batch, self.num_transitions])
+
+        # print(str(input_embeddings.get_shape()) + " embedding shape")
 
 
-
-        logits = None
         # TODO(Students) End
         output_dict = {"logits": logits}
 
@@ -157,6 +170,32 @@ class DependencyParser(models.Model):
 
         """
         # TODO(Students) Start
+        batch_size = logits.get_shape().as_list()[0]
+
+        loss = None
+        regularization = None
+
+        # Compute stable-softmax, softmax(z - max(z)) -> e^{z - max(z}}/Sigma(e^{z - max(z)})
+        max_logits = tf.reshape(tf.reduce_max(logits, axis=1), [batch_size, 1])
+        stable_factor = tf.subtract(logits, max_logits)
+        stable_factor = tf.exp(stable_factor)
+        denominator_factor = tf.reshape(tf.reduce_sum(stable_factor, axis=1), [batch_size, 1])
+        stable_softmax = tf.divide(stable_factor, denominator_factor)
+
+        # cross_entropy_loss = tf.math.log(stable_softmax)
+
+        mask = tf.greater(labels, -1)
+        mask = tf.dtypes.cast(tf.dtypes.cast(mask, 'int32'), 'float32')
+
+        cross_entropy_loss = tf.multiply(stable_softmax, labels)
+        cross_entropy_loss = tf.multiply(cross_entropy_loss, mask)
+        cross_entropy_loss = tf.reshape(tf.reduce_sum(cross_entropy_loss, axis=1), [batch_size, 1])
+        cross_entropy_loss = tf.math.log(tf.add(cross_entropy_loss, 1e-8))
+
+        cross_entropy_loss = -1.0 * tf.reduce_mean(cross_entropy_loss)
+        loss = cross_entropy_loss
+
+        regularization = (self._regularization_lambda) * (tf.nn.l2_loss(self.w1) + tf.nn.l2_loss(self.w2) + tf.nn.l2_loss(self.embeddings))
 
         # TODO(Students) End
         return loss + regularization
